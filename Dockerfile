@@ -1,29 +1,31 @@
-# Usar imagen base de OpenJDK 17 con Alpine Linux para menor tamaño
-FROM eclipse-temurin:17-jre-alpine as builder
-
-# Instalar Maven
-RUN apk add --no-cache maven
+# Etapa de construcción con Gradle
+FROM eclipse-temurin:17-jdk-alpine AS builder
 
 # Establecer directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de configuración de Maven
-COPY pom.xml .
-COPY mvnw .
-COPY mvnw.cmd .
-COPY .mvn .mvn
+# Copiar archivos de configuración de Gradle
+COPY gradle gradle
+COPY gradlew .
+COPY gradlew.bat .
+COPY gradle.properties .
+COPY settings.gradle.kts .
+COPY build.gradle.kts .
 
-# Descargar dependencias (esto se cachea si no cambia el pom.xml)
-RUN mvn dependency:go-offline -B
+# Dar permisos de ejecución a gradlew
+RUN chmod +x ./gradlew
 
-# Copiar código fuente
-COPY src src
+# Descargar dependencias (esto se cachea si no cambia build.gradle.kts)
+RUN ./gradlew dependencies --no-daemon
+
+# Copiar código fuente del módulo app
+COPY app ./app
 
 # Compilar la aplicación
-RUN mvn clean package -DskipTests
+RUN ./gradlew :app:build --no-daemon -x test
 
 # Etapa de producción
-FROM openjdk:17-jre-alpine
+FROM eclipse-temurin:17-jre-alpine
 
 # Crear usuario no-root para seguridad
 RUN addgroup -g 1001 -S appgroup && \
@@ -32,8 +34,10 @@ RUN addgroup -g 1001 -S appgroup && \
 # Establecer directorio de trabajo
 WORKDIR /app
 
-# Copiar el JAR compilado desde la etapa de builder
-COPY --from=builder /app/target/*.jar app.jar
+# Copiar el JAR/APK compilado desde la etapa de builder
+# Nota: Si es una app Android, generará un APK, no un JAR ejecutable
+COPY --from=builder /app/app/build/libs/*.jar app.jar 2>/dev/null || \
+     COPY --from=builder /app/app/build/outputs/apk/release/*.apk app.apk
 
 # Cambiar propietario de los archivos al usuario no-root
 RUN chown -R appuser:appgroup /app
@@ -46,7 +50,7 @@ EXPOSE 8080
 
 # Configurar variables de entorno
 ENV JAVA_OPTS="-Xmx512m -Xms256m"
-ENV SPRING_PROFILES_ACTIVE=prod
 
 # Comando para ejecutar la aplicación
+# Nota: Esto solo funciona si es una aplicación backend, no una app Android
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
