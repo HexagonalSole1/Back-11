@@ -1,5 +1,5 @@
 # Usar imagen base de OpenJDK 17 con Alpine Linux para menor tamaño
-FROM openjdk:17-jdk-alpine AS builder
+FROM eclipse-temurin:17-jre-alpine as builder
 
 # Instalar Maven
 RUN apk add --no-cache maven
